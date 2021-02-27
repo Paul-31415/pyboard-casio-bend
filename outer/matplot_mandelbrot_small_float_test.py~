@@ -1,0 +1,26 @@
+from small_floats import *
+import numpy as np
+
+def region(which=h,pos=0,scale=2,iters=1024,res=256):
+    from matplotlib import pyplot as plt
+
+    px = np.array((res,res),dtype='i')
+    for y in range(res):
+        ci = which((2*y/(res-1)-1)*scale+pos)
+        print(y,'/',res,end="\r")
+        for x in range(res):
+            cr = which((2*x/(res-1)-1)*scale+pos)
+
+            zr = cr
+            zi = ci
+            for i in range(iters):
+                if zi*zi+zr*zr > 4:
+                    break
+                zr,zi = zr*zr-zi*zi+cr,zr*zi+zi*zr+ci
+            else:
+                i = -1
+            px[x,y] = i
+    plt.imshow((px+1)/iters)
+    plt.show(block=0)
+            
+            

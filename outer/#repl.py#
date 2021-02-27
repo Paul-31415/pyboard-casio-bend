@@ -1,0 +1,14 @@
+#uos.dupterm(streamobj,index=0,/)
+import uos
+import uio
+
+class PyTerm(uio.IOBase):
+    def __init__(self,inp,out):
+        self.inp = inp
+        self.out = out
+    def readinto(self,buf):
+        r = self.inp(buf)
+        return r if r != 0 else None
+    def write(self,dat):
+        return self.out(dat)
+

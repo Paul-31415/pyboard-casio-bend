@@ -1,0 +1,66 @@
+from array import array
+from bfTools import BufFiller
+
+class sfile(BufFiller):
+    def __init__(self,f):
+        ff = open(f,'rb')
+        self.file = ff
+        self.func = soundfileParser(f,ff)
+    def seek(self,*a):
+        self.file.seek(*a)
+    def tell(self,*a):
+        self.file.tell(*a)
+    
+def soundfileParser(f,n):
+    if n[-4:] == ".hfs":
+        return fileNb(f)
+    if n[-4:] == ".8bm":
+        return file8b(f)
+    if n[-5:] == ".16bm":
+        return file16b(f)
+    raise Exception("unknown file type")
+
+
+def file8b(f,bl = 512):
+    b = bytearray(bl)
+    def fill(arr,a=[b,0,f]):
+        amt = len(arr)
+        while amt > 0:
+            if a[1] == 0:
+                a[1] = a[2].readinto(a[0])
+                if a[1] == 0:
+                    return
+            l = min(amt,a[1])
+            a[1] -= l
+            asm_tools.a_u8_to_float(a[0],arr,l,(len(arr)-amt)*4)
+            amt -= l
+    return fill
+def file16b(f,bl = 512):
+    b = array('h',bytearray(bl<<1))
+    def fill(arr,a=[b,0,f]):
+        amt = len(arr)
+        while amt > 0:
+            if a[1] == 0:
+                a[1] = a[2].readinto(a[0]) >> 1
+                if a[1] == 0:
+                    return
+            l = min(amt,a[1])
+            a[1] -= l
+            asm_tools.a_s16_to_float(a[0],arr,l,(len(arr)-amt)*4)
+            amt -= l
+    return fill
+def fileNb(f,n=2,rout=asm_tools.a_half_to_float,bl = 512):
+    b = bytearray(bl*n)
+    def fill(arr,a=[b,0,f]):
+        amt = len(arr)
+        while amt > 0:
+            if a[1] == 0:
+                a[1] = a[2].readinto(a[0]) // n
+                if a[1] == 0:
+                    return
+            l = min(amt,a[1])
+            a[1] -= l
+            rout(a[0],arr,l,(len(arr)-amt)*4)
+            amt -= l
+    return fill
+

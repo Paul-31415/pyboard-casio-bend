@@ -1,0 +1,25 @@
+import pyb
+class Spi:
+    def __init__(self,clk,mosi,miso,falses=[0,0,0]):
+        self.clk = clk
+        self.mosi = mosi
+        self.miso = miso
+        self.f = falses
+    def examine(self,n=8,delay=1000):
+        arr = []
+        for i in range(n):
+            self.clk(self.f[0])
+            pyb.udelay(delay)
+            arr += [(self.clk(),self.mosi(),self.miso())]
+            self.clk(not self.f[0])
+            pyb.udelay(delay)
+            arr += [(self.clk(),self.mosi(),self.miso())]
+        
+    def sendBits(self,bits,delay = 10000):
+        for b in bits:
+            self.clk(self.f[0])
+            self.mosi(self.f[1]^b)
+            pyb.udelay(delay)
+            self.clk(not self.f[0])
+            pyb.udelay(delay)
+    

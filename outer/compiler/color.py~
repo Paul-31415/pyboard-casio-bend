@@ -1,0 +1,21 @@
+
+
+
+class GraphNode:
+    def __init__(self,d,*e):
+        self.data = d
+        self.edges = e
+class Graph:
+    def __init__(self):
+        self.nodes = set()
+    def add(self,node):
+        self.nodes.add(node)
+    def remove(self,node):
+        self.nodes.remove(node)
+    def __iter__(self):
+        for n in self.nodes:
+            yield n
+
+def color(grph):
+    
+    

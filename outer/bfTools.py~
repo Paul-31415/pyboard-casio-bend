@@ -1,0 +1,231 @@
+from array import array
+
+
+
+class BufFiller:
+    def __init__(self,func):
+        self.func = func
+    def __call__(self,buf):
+        self.func(buf)
+    def __add__(self,o):
+        return BFSum(self,o)
+    def __radd__(self,o):
+        return BFSum(o,self)
+    def __sub__(self,o):
+        return BFDif(self,o)
+    def __rsub__(self,o):
+        return BFDif(o,self)
+    def __mul__(self,o):
+        return BFProd(self,o)
+    def __rmul__(self,o):
+        return BFProd(o,self)
+    def __div__(self,o):
+        return BFQuot(self,o)
+    def __rdiv__(self,o):
+        return BFQuot(o,self)
+    
+    def __neg__(self):
+        return BFNeg(self)
+    def __pos__(self):
+        return self
+    def sqrt(self):
+        return BFSqrt(self)
+    def floor(self):
+        return BFFloor(self)
+    
+    def __repr__(self):
+        return "bf_"+repr(self.func)
+
+class DC(BufFiller):
+    def __init__(self,v):
+        self.attrs = array('f',[v])
+    def __repr__(self):
+        return "DC("+repr(self.attrs[0])+")"
+    def __call__(self,buf):
+        if len(buf):
+            self._fill(buf,self.attrs,len(buf))
+    @staticmethod
+    @micropython.asm_thumb
+    def _fill(r0,r1,r2):
+        ldr(r3,[r1,0])
+        label(loop)
+        str(r3,[r0,0])
+        add(r0,4)
+        sub(r2,1)
+        bgt(loop)
+mute = DC(0)    
+        
+def bfify(v):
+    if issubclass(BufFiller,v):
+        return v
+    try:
+        return DC(float(v))
+    except:
+        return BufFiller(v)
+        
+class BufFillerFold(BufFiller):
+    def __init__(self,a=mute,*s):
+        self.start = bfify(a)
+        self.parts = [bfify(e) for e in s]
+        self.buf = array('f',[])
+    def __call__(self,buf):
+        if len(buf):
+            if len(self.buf) < len(buf):
+                self.buf += array('f',[0]*(len(buf)-len(self.buf)))
+            m = memoryview(self.buf)[:len(buf)]
+            self.start(buf)
+            for p in self.parts:
+                p(m)
+                self._func(buf)
+    def _func(self,b):
+        pass
+    def __repr__(self,f=' op '):
+        return "("+repr(self.start)+f+f.join((repr(p) for p in self.parts))+")"
+class BFSum(BufFillerFold):
+    def __repr__(self):
+        return super().__repr__("+")
+    def _func(self,b):
+        self._sum(b,self.buf,len(b))
+    def __add__(self,o):
+        return BFSum(self.start,*(self.parts+[o]))
+    def __radd__(self,o):
+        return BFSum(o,self.start,*self.parts)
+    @staticmethod
+    @micropython.asm_thumb
+    def _sum(r0,r1,r2):
+        label(loop)
+        vldr(s1,[r1,0])
+        vldr(s0,[r0,0])
+        vadd(s0,s0,s1)
+        vstr(s0,[r0,0])
+        add(r0,4)
+        add(r1,4)
+        sub(r2,1)
+        bgt(loop)
+class BFDif(BufFillerFold):
+    def __repr__(self):
+        return super().__repr__("-")
+    def _func(self,b):
+        self._dif(b,self.buf,len(b))
+    def __sub__(self,o):
+        return BFDif(self.start,*(self.parts+[o]))
+    @staticmethod
+    @micropython.asm_thumb
+    def _dif(r0,r1,r2):
+        label(loop)
+        vldr(s1,[r1,0])
+        vldr(s0,[r0,0])
+        vsub(s0,s0,s1)
+        vstr(s0,[r0,0])
+        add(r0,4)
+        add(r1,4)
+        sub(r2,1)
+        bgt(loop)
+class BFProd(BufFillerFold):
+    def __repr__(self):
+        return super().__repr__("*")
+    def _func(self,b):
+        self._prod(b,self.buf,len(b))
+    def __mul__(self,o):
+        return BFProd(self.start,*(self.parts+[o]))
+    def __rmul__(self,o):
+        return BFProd(o,self.start,*self.parts)
+    @staticmethod
+    @micropython.asm_thumb
+    def _prod(r0,r1,r2):
+        label(loop)
+        vldr(s1,[r1,0])
+        vldr(s0,[r0,0])
+        vmul(s0,s0,s1)
+        vstr(s0,[r0,0])
+        add(r0,4)
+        add(r1,4)
+        sub(r2,1)
+        bgt(loop)
+class BFQuot(BufFillerFold):
+    def __repr__(self):
+        return super().__repr__("/")
+    def _func(self,b):
+        self._quot(b,self.buf,len(b))
+    def __sub__(self,o):
+        return BFQuot(self.start,*(self.parts+[o]))
+    @staticmethod
+    @micropython.asm_thumb
+    def _quot(r0,r1,r2):
+        label(loop)
+        vldr(s1,[r1,0])
+        vldr(s0,[r0,0])
+        vdiv(s0,s0,s1)
+        vstr(s0,[r0,0])
+        add(r0,4)
+        add(r1,4)
+        sub(r2,1)
+        bgt(loop)
+
+
+
+
+
+class BufFillerMonop(BufFiller):
+    def __init__(self,a=mute):
+        self.fill = bfify(a)
+    def __call__(self,buf):
+        if len(buf):
+            self.fill(buf)
+            self._func(buf)
+    def _func(self,b):
+        pass
+    def __repr__(self,f="(op ",s=')'):
+        return f+repr(self.fill)+s
+class BFNeg(BufFillerMonop):
+    def __repr__(self):
+        return super().__repr__("(-")
+    def _func(self,b):
+        self._neg(b,b,len(b))
+    def __neg__(self):
+        return self.fill
+    @staticmethod
+    @micropython.asm_thumb
+    def _neg(r0,r1,r2):
+        label(loop)
+        vldr(s1,[r1,0])
+        vneg(s0,s1)
+        vstr(s0,[r0,0])
+        add(r0,4)
+        add(r1,4)
+        sub(r2,1)
+        bgt(loop)
+class BFSqrt(BufFillerMonop):
+    def __repr__(self):
+        return super().__repr__("√(")
+    def _func(self,b):
+        self._sqrt(b,b,len(b))
+    @staticmethod
+    @micropython.asm_thumb
+    def _sqrt(r0,r1,r2):
+        label(loop)
+        vldr(s1,[r1,0])
+        vsqrt(s0,s1)
+        vstr(s0,[r0,0])
+        add(r0,4)
+        add(r1,4)
+        sub(r2,1)
+        bgt(loop)
+class BFFloor(BufFillerMonop):
+    def __repr__(self):
+        return super().__repr__("int(")
+    def _func(self,b):
+        self._floor(b,b,len(b))
+    @staticmethod
+    @micropython.asm_thumb
+    def _floor(r0,r1,r2):
+        label(loop)
+        vldr(s1,[r1,0])
+        vcvt_s32_f32(s0,s1)
+        vstr(s0,[r0,0])
+        add(r0,4)
+        add(r1,4)
+        sub(r2,1)
+        bgt(loop)
+        
+        

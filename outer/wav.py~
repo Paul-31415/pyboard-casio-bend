@@ -1,0 +1,21 @@
+
+
+import struct
+
+class Wave:
+    FMT_CHUNK = {16:"<HHIIHH",18:"<HHIIHHH",40:"<HHIIHHHHI16s"}
+    FMT_PCM = 1
+    FMT_FLOAT = 3
+    FMT_ALAW = 6
+    FMT_MULAW = 7
+    FMT_EXTENSIBLE = 0xfffe
+    def __init__(self,f):
+        assert f.read(4) == b'RIFF'
+        l = f.read(4)
+        assert f.read(4) == b'WAVE'
+        assert f.read(4) == b'fmt '
+        cs = struct.unpack("<I",f.read(4))
+        assert cs in FMT_CHUNK
+        self.format = struct.unpack(FMT_CHUNK[cs],f.read(cs))
+        
+        

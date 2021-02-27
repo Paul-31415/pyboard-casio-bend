@@ -1,0 +1,37 @@
+import math
+
+
+
+def biquadCoeffs(pfreq,pmag,zfreq,zmag,gain,sr=48000):
+    pfreq *= 2*math.pi/sr
+    zfreq *= 2*math.pi/sr
+    #(x-ae^iw) -> x^2-2x*a*cos(w)+a^2
+    return -2*math.cos(pfreq)*pmag,pmag*pmag,\
+        gain,-gain*2*math.cos(zfreq)*zmag,gain*zmag*zmag
+def biquadFromPZ(pole,zero,gain):
+    #(x-pole) -> x^2-2x*pole.real+|pole|^2
+    return -2*pole.real,(pole*pole.conjugate()).real,\
+        gain,-2*gain*zero.real,gain*(zero*zero.conjugate()).real
+
+def storeBiquadCoeffs(pfreq,pmag,zfreq,zmag,gain,where,offs=0,sr=48000):
+    pfreq *= 2*math.pi/sr
+    zfreq *= 2*math.pi/sr
+    
+    a1,a2,b1,b2 = -2*math.cos(pfreq)*pmag, pmag*pmag,-2*math.cos(zfreq)*zmag, zmag*zmag
+    
+    dcg = (1+b1+b2)/(1+a1+a2)
+    nfg = (1-b1+b2)/(1-a1+a2)
+    pc = math.e**(1j*pfreq)
+    pg = (1+b1*pc+b2*pc*pc)/(1+a1*pc+a2*pc*pc)
+    maxg = max(abs(dcg),abs(nfg),abs(pg))
+    gain /= maxg
+    
+    #(x-ae^iw) -> x^2-2x*a*cos(w)+a^2
+    where[offs]   = a1
+    where[offs+1] = a2
+    where[offs+2] = gain
+    where[offs+3] = gain*b1
+    where[offs+4] = gain*b2
+
+
+

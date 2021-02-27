@@ -1,0 +1,205 @@
+#look into uos.dupterm(streamobj,index=0,/)
+
+import gc
+import pyb
+import micropython
+import asm_tools
+import filt
+from array import array
+import struct
+import math
+
+from bftools import *
+from soundfiles import *
+
+from sound import *
+from fpga import fpga
+@micropython.asm_thumb
+def addr(r0):
+    pass
+
+
+#leds:
+#1 - red
+#2 - grn
+#3 - yel
+#4 - blu
+pyb.LED(2).toggle()
+pyb.delay(250)
+pyb.LED(2).toggle()
+
+mix.dac1 = pyb.DAC(1,bits=12)
+mix.dac2 = pyb.DAC(2,bits=12)
+mix.dac_timer = pyb.Timer(6)
+mix.buf_timer = pyb.Timer(5)
+#update()
+
+#now fpga management stuff
+#is it ready?
+fpga.on()
+with open("hardware.bin","rb") as f:
+    fpga.viper_load(f)
+fpga.spi.init(pyb.SPI.MASTER,polarity=0,phase=0,baudrate=10000000)
+fpga.alt2.init(pyb.Pin.OUT_PP)
+fpga.alt2(0)
+for i in range(12):
+    if fpga.spi.send_recv(b'\x91')[0] != 1: #send a dummy bit-depth command
+        break
+    pyb.delay(250)
+    print("[warn] fpga not on:",i)
+else:
+    print("[warn] fpga failed init!")
+    pyb.LED(3).on()
+    fpga.off()
+
+#fpga helper routines
+def notes():
+    return struct.unpack('>I',fpga.spi.send_recv(b'\xe1\0\0\0\0')[1:])[0]
+
+def onesi(n):
+    i = 0
+    while n:
+        if n & 1:
+            yield i
+        n >>= 1
+        i += 1
+
+mix.rate = 48000    
+
+def start(gain=50):
+    update()    
+    update()
+    mix._buffArgs1[5] = gain
+    mix._buffArgs2[5] = gain
+
+def stop():
+    mix.buf_timer.callback(None)
+    mute(mix._outFBuf)
+
+
+def spiano10(fb=220,s=1/12):
+    b = array('f',[0]*30)
+    for i in range(10):
+        b[i*3] = 1
+    def frq(n):
+        return 2**(n*s)*fb*2*math.pi/48000
+    def fill(arr,b=b):
+        i = 0
+        for n in onesi(notes()):
+            b[i*3+2] = frq(n)
+            i += 1
+            if i == 10:
+                break
+        for i in range(i,10):
+            b[i*3+2] = 0
+        mute(arr)
+        asm_tools.as_osc_synth(arr,arr,b,len(arr))
+    return fill
+
+def spiano10p(fb=220,s=1/12,f=.1):
+    b = array('f',[0]*30)
+    for i in range(10):
+        b[i*3] = 1
+    def frq(n):
+        return 2**(n*s)*fb*2*math.pi/48000
+    def fill(arr,b=b):
+        i = 0
+        for n in onesi(notes()):
+            b[i*3+2] = b[i*3+2]*(1-f)+f*frq(n)
+            i += 1
+            if i == 10:
+                break
+        for i in range(i,10):
+            b[i*3+2] *= 1-f
+        mute(arr)
+        asm_tools.as_osc_synth(arr,arr,b,len(arr))
+    return fill
+
+def spiano30(fb=220,s=1/12):
+    b = [array('f',[0]*30) for i in range(3)]
+    for i in range(10):
+        for j in range(3):
+            b[j][i*3] = [1,-1][i&1]
+    def frq(n):
+        return 2**(n*s)*fb*2*math.pi/48000
+    def fill(arr,b=b):
+        i = 0
+        for n in onesi(notes()):
+            b[i//10][(i%10)*3+2] = frq(n)
+            i += 1
+            if i == 30:
+                break
+        for i in range(i,30):
+            b[i//10][(i%10)*3+2] = 0
+        mute(arr)
+        asm_tools.a_osc_synth(arr,arr,b[0],len(arr))
+        asm_tools.a_osc_synth(arr,arr,b[1],len(arr))
+        asm_tools.a_osc_synth(arr,arr,b[2],len(arr))
+    return fill
+
+
+#other inputs
+
+class joystick:
+    def __init__(self,x,y,xm=0,xM=4095,ym=0,yM=4095):
+        self.x = x
+        self.y = y
+        self.xb = [xm,xM]
+        self.yb = [ym,yM]
+        t = lambda x,l,h: 2*(x-l)/(h-l)-1
+        self.transform = lambda x,y,xb,yb: t(x,*xb)+1j*t(y,*yb)
+    def read(self):
+        x,y = self.x.read(),self.y.read()
+        return self.transform(x,y,self.xb,self.yb)
+    def __call__(self):
+        return self.read()
+
+j1 = joystick(pyb.ADC("X1"),pyb.ADC("X2"),478,3359,554,3197)
+j2 = joystick(pyb.ADC("X3"),pyb.ADC("X4"),555,3541,486,3185)
+
+
+def mag2(n):
+    return n.real*n.real+n.imag*n.imag
+
+def jfc(f,m=.9):
+    def fill(a):
+        p = j1()
+        z = j2()
+        if abs(p) > m:
+            p *= m/abs(p)
+        a1,a2 = -2*p.real,mag2(p)
+        b1,b2 = -2*z.real,mag2(z)
+        mix._buffArgs1[10] = a1
+        mix._buffArgs1[11] = a2
+        mix._buffArgs1[13] = b1
+        mix._buffArgs1[14] = b2
+        if math.isnan(mix._buffArgs1[15]):
+            mix._buffArgs1[15] = 0
+        if math.isnan(mix._buffArgs1[16]):
+            mix._buffArgs1[16] = 0
+        mix._buffArgs2[10] = a1
+        mix._buffArgs2[11] = a2
+        mix._buffArgs2[13] = b1
+        mix._buffArgs2[14] = b2
+        if math.isnan(mix._buffArgs2[15]):
+            mix._buffArgs2[15] = 0
+        if math.isnan(mix._buffArgs2[16]):
+            mix._buffArgs2[16] = 0
+        
+        f(a)
+    return fill
+
+
+#pyb.freq(216000000)
+
+sw = pyb.Switch()
+og = mute
+mix.out,og = og,mix.out
+while 0:
+    while not sw():
+        pyb.delay(10)
+    while sw():
+        pyb.delay(10)
+    mix.out,og = og,mix.out
+    pyb.LED(3).toggle()
+    f.seek(0)
